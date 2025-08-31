@@ -1,3 +1,4 @@
+// src/modules/listing-intake/listing-intake.service.ts
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -37,14 +38,16 @@ export class ListingIntakeService {
   ) {}
 
   /**
-   * Create a DRAFT listing from a plain text message.
-   * Owner is resolved/created based on Telegram user (tg_user_id).
+   * Create a DRAFT listing from a text message.
+   * Duplicate checks:
+   *  - same Telegram message id tag (tg:msg=...) already present -> DUPLICATE_POST
+   *  - same title for the owner -> DUPLICATE_TITLE
    */
   async createDraftListingFromText(opts: {
     chatId: number;
-    fromUserId: number; // Telegram numeric id
-    fromUsername?: string | null; // Telegram @username (optional)
-    fromDisplayName?: string | null; // e.g., "First Last" (optional)
+    fromUserId: number;
+    fromUsername?: string | null;
+    fromDisplayName?: string | null;
     tgMessageId: number;
     text: string;
   }): Promise<string> {
@@ -57,14 +60,21 @@ export class ListingIntakeService {
       text,
     } = opts;
 
-    // 1) find or create the owner user (by tg_user_id)
+    // 1) duplicate by telegram message id tag
+    if (await this.isDuplicateByMessageTag(tgMessageId)) {
+      const err = new Error('DUPLICATE_POST');
+      (err as any).reason = 'message';
+      throw err;
+    }
+
+    // 2) ensure owner
     const owner = await this.findOrCreateUserByTelegram(
       fromUserId,
       fromUsername ?? null,
       fromDisplayName ?? null,
     );
 
-    // 2) basic parsing/defaults
+    // 3) parse defaults
     const title = (text ?? '').slice(0, 120) || 'Untitled';
     const description = text ?? null;
     const price = this.extractPrice(text);
@@ -72,7 +82,14 @@ export class ListingIntakeService {
     const unitType = this.safeEnumPick(UnitType);
     const furnished = FurnishedType.UNFURNISHED;
 
-    // 3) create draft listing
+    // 4) duplicate by title for this owner
+    if (await this.isDuplicateTitleForOwner(owner.id, title)) {
+      const err = new Error('DUPLICATE_TITLE');
+      (err as any).reason = 'title';
+      throw err;
+    }
+
+    // 5) create draft
     const listing: Listing = {
       id: uuid(),
       ownerUserId: owner.id,
@@ -106,8 +123,6 @@ export class ListingIntakeService {
 
       amenities: null,
       nearbyPlaces: null,
-
-      // keep Telegram refs in tags for traceability
       tags: [
         `tg:chat=${chatId}`,
         `tg:from=${fromUserId}`,
@@ -120,7 +135,6 @@ export class ListingIntakeService {
       publishedAt: null,
       postedAt: null,
 
-      // handled by decorators
       createdAt: undefined as any,
       updatedAt: undefined as any,
 
@@ -131,13 +145,11 @@ export class ListingIntakeService {
     return listing.id;
   }
 
-  /** Save a telegram media item into ListingMedia (unique tgFileUniqueId enforced). */
   async saveListingMedia(
     listingId: string,
     m: IntakeMediaInput,
   ): Promise<void> {
     const kind = m.kind === 'photo' ? MediaKind.PHOTO : MediaKind.DOCUMENT;
-
     const row: ListingMedia = {
       id: uuid(),
       listingId,
@@ -151,17 +163,43 @@ export class ListingIntakeService {
       mimeType: m.mimeType ?? null,
       fileSize: m.fileSize ?? null,
       cdnUrl: null,
-      createdAt: undefined as any, // CreateDateColumn
+      createdAt: undefined as any,
     };
-
-    try {
-      await this.mediaRepo.save(row);
-    } catch {
-      // duplicate unique tg_file_unique_id → ignore
-    }
+    await this.mediaRepo.save(row); // allow duplicates across (and within) listings
   }
 
-  /** Get listing + its media, ordered oldest first. */
+  async anyMediaAlreadyExists(uniqueIds: string[]): Promise<boolean> {
+    if (!uniqueIds.length) return false;
+    const cnt = await this.mediaRepo
+      .createQueryBuilder('m')
+      .where('m.tgFileUniqueId IN (:...ids)', { ids: uniqueIds })
+      .getCount();
+    return cnt > 0;
+  }
+
+  async isDuplicateByMessageTag(tgMessageId: number): Promise<boolean> {
+    const tag = `tg:msg=${tgMessageId}`;
+    // MySQL JSON_SEARCH(tags, 'one', 'tg:msg=123') IS NOT NULL
+    const qb = this.listingRepo
+      .createQueryBuilder('l')
+      .where(`JSON_SEARCH(l.tags, 'one', :needle) IS NOT NULL`, {
+        needle: tag,
+      });
+    const cnt = await qb.getCount();
+    return cnt > 0;
+  }
+
+  async isDuplicateTitleForOwner(
+    ownerUserId: string,
+    title: string,
+  ): Promise<boolean> {
+    const cnt = await this.listingRepo.count({
+      where: { ownerUserId, title },
+      take: 1,
+    });
+    return cnt > 0;
+  }
+
   async getListingWithMedia(listingId: string) {
     const listing = await this.listingRepo.findOne({
       where: { id: listingId },
@@ -173,7 +211,6 @@ export class ListingIntakeService {
     return { listing, media };
   }
 
-  /** Recent drafts created by this Telegram user (via their mapped ownerUserId). */
   async listRecentDraftsForTelegramUser(tgUserId: number, take = 5) {
     const owner = await this.userRepo.findOne({
       where: { tgUserId: String(tgUserId) },
@@ -186,7 +223,6 @@ export class ListingIntakeService {
     });
   }
 
-  /** Build HTML caption for a listing. */
   buildListingCaption(l: Listing): string {
     const esc = (s: string) =>
       (s ?? '')
@@ -218,17 +254,15 @@ export class ListingIntakeService {
 
   // ---------- helpers ----------
 
-  /** Ensure there is a users row for this Telegram user; update metadata if changed. */
   private async findOrCreateUserByTelegram(
     tgUserIdNum: number,
     tgUsername: string | null,
     displayName: string | null,
   ): Promise<User> {
-    const tgUserId = String(tgUserIdNum); // store BIGINT as string in TS
+    const tgUserId = String(tgUserIdNum);
     let user = await this.userRepo.findOne({ where: { tgUserId } });
 
     if (user) {
-      // update profile fields if changed
       let dirty = false;
       if (tgUsername !== undefined && user.tgUsername !== tgUsername) {
         user.tgUsername = tgUsername;
@@ -242,7 +276,6 @@ export class ListingIntakeService {
       return user;
     }
 
-    // create
     const toInsert: User = {
       id: uuid(),
       tgUserId,
@@ -252,23 +285,19 @@ export class ListingIntakeService {
       createdAt: undefined as any,
       updatedAt: undefined as any,
     };
-
     try {
       await this.userRepo.insert(toInsert);
       return toInsert;
     } catch {
-      // race: someone else created it; fetch again
       user = await this.userRepo.findOne({ where: { tgUserId } });
       if (user) return user;
-      // unlikely fallback
       throw new Error('Failed to create or fetch user for Telegram id');
     }
   }
 
   private safeEnumPick<T extends object>(e: T): any {
     const vals = Object.values(e as any);
-    return vals[0]; // simple default; refine later
-    // you can map audience/unitType from text with NLP if needed
+    return vals[0];
   }
 
   private extractPrice(text: string): number {

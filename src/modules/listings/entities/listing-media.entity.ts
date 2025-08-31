@@ -13,7 +13,6 @@ import { MediaKind } from 'src/common/enums/flats.enum';
 
 @Entity({ name: 'listing_media' })
 @Index('idx_listing', ['listingId'])
-@Index('uk_media_unique', ['tgFileUniqueId'], { unique: true })
 export class ListingMedia {
   @PrimaryColumn('char', { length: 36, name: 'id' })
   id!: string;

@@ -35,18 +35,11 @@ export function registerPostQuickFlow(
     }
   });
 
-  // choose guided (placeholder)
-  bot.action(ACTIONS.CHOOSE_GUIDED as any, async (ctx) => {
-    try {
-      await ctx.answerCbQuery();
-    } catch {}
-    await ctx.editMessageText('🧠 Guided mode coming next.');
-  });
-
   // TEXT (strict gating)
-  bot.on('text', async (ctx) => {
+  bot.on('text', async (ctx, next) => {
     const s = sessions.get(ctx.chat.id);
 
+    if (s?.mode === 'guided') return next();
     // If user isn't in the quick-post text step, guide them into the flow instead of ignoring.
     if (s?.mode !== 'awaiting_text_quick') {
       const raw = ctx.message.text || '';

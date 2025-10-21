@@ -41,9 +41,12 @@ export const ACTIONS = {
 
   BROWSE_MAIN: 'browse:main',
   BROWSE_AREA: 'browse:area',
-  BROWSE_LATEST: 'browse:latest',
   BROWSE_BUDGET: 'browse:budget',
   BROWSE_BUDGET_PREFIX: 'browse:budget:', // e.g. browse:budget:10-20
   BROWSE_TYPE: 'browse:type',
   BROWSE_TYPE_PREFIX: 'browse:type:',
+
+  BROWSE_LATEST: 'browse:latest',
+  BROWSE_LATEST_PAGE_PREFIX: 'browse:latest:',
+  UI_NOP_PREFIX: 'ui:nop:',
 } as const;

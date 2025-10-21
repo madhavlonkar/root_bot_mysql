@@ -6,6 +6,7 @@ import { registerPostQuickFlow } from './flows/post-quick.flow';
 import { registerNavHandlers } from './flows/nav.handler';
 import { registerGuidedFlow } from './flows/guided.flow';
 import { registerBrowseFlow } from './flows/browse.flow';
+import { ListingService } from '../listings/listing.service';
 
 @Injectable()
 export class TelegramMenuService implements OnModuleInit {
@@ -15,6 +16,7 @@ export class TelegramMenuService implements OnModuleInit {
   constructor(
     private readonly runtime: TelegramBotService,
     private readonly intake: ListingIntakeService,
+    private readonly listings: ListingService,
   ) {}
 
   async onModuleInit() {
@@ -24,7 +26,13 @@ export class TelegramMenuService implements OnModuleInit {
     registerNavHandlers(bot, this.sessions, this.intake);
     registerPostQuickFlow(bot, this.runtime, this.sessions, this.intake);
     registerGuidedFlow(bot, this.runtime, this.sessions, this.intake);
-    registerBrowseFlow(bot, this.runtime, this.sessions, this.intake);
+    registerBrowseFlow(
+      bot,
+      this.runtime,
+      this.sessions,
+      this.intake,
+      this.listings,
+    );
 
     await this.runtime.ensureLaunched();
     this.logger.log('TelegramMenuService handlers registered.');

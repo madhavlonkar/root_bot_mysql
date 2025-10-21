@@ -1,4 +1,4 @@
-import { Telegraf } from 'telegraf';
+import { Markup, Telegraf } from 'telegraf';
 import { TelegramBotService } from 'src/modules/telegram/telegram-bot.service';
 import { ListingIntakeService } from 'src/modules/listing-intake/listing-intake.service';
 import { ACTIONS } from '../constants';
@@ -6,7 +6,6 @@ import { Session, GuidedDraft, Step } from '../types';
 import {
   guidedTypeAudienceKeyboard,
   guidedRulesKeyboard,
-  guidedConfirmKeyboard,
   guidedRentKeyboard,
   guidedDepositKeyboard,
   guidedFurnishingKeyboard,
@@ -35,7 +34,7 @@ export function registerGuidedFlow(
     };
     sessions.set(ctx.chat!.id, { mode: 'guided', step: Step.TYPE_AUD, draft });
     const sent = await ctx.replyWithHTML(
-      '🍀 <b>Create an Ad (Guided)</b>\nPick the <b>type</b> and <b>audience</b>.',
+      '🍀 <b>Create an Ad (Guided)</b>  <i>(Step 1/5)</i>\nPick the <b>type</b> and <b>audience</b>.',
       guidedTypeAudienceKeyboard(draft),
     );
     const s = sessions.get(ctx.chat!.id);
@@ -49,7 +48,7 @@ export function registerGuidedFlow(
     } catch {}
     const s = sessions.get(ctx.chat!.id);
     if (!s || s.mode !== 'guided' || s.step !== Step.TYPE_AUD) return;
-    s.draft.unitType = ctx.match![1] as UnitType;
+    s.draft.unitType = ctx.match[1] as UnitType;
     await redrawTypeAudCard(ctx, s);
   });
 
@@ -59,7 +58,7 @@ export function registerGuidedFlow(
     } catch {}
     const s = sessions.get(ctx.chat!.id);
     if (!s || s.mode !== 'guided' || s.step !== Step.TYPE_AUD) return;
-    s.draft.audience = ctx.match![1] as Audience;
+    s.draft.audience = ctx.match[1] as Audience;
     await redrawTypeAudCard(ctx, s);
   });
 
@@ -77,16 +76,17 @@ export function registerGuidedFlow(
       return replaceCard(
         ctx,
         s,
-        '📍 <b>Location</b>\nSend area/locality and city (e.g. <i>Powai, Mumbai</i>).',
+        '📍 <b>Location</b>  <i>(Step 2/5)</i>\nSend your area/locality and city (e.g. <i>Powai, Mumbai</i>).',
       );
     }
 
     if (s.step === Step.BUDGET_FURN && s.bfStage === 'furn') {
+      // After finishing furnishing, go to Rules
       s.step = Step.RULES;
       return replaceCard(
         ctx,
         s,
-        '⚙️ <b>Rules</b>\nToggle what applies, then Next.',
+        '⚙️ <b>Rules</b>  <i>(Step 4/5)</i>\nToggle what applies, then tap <b>Next</b>.',
         guidedRulesKeyboard(s.draft),
       );
     }
@@ -96,7 +96,7 @@ export function registerGuidedFlow(
       return replaceCard(
         ctx,
         s,
-        '📝 <b>Description & Contact</b>\nSend description. You can add a phone/email too.',
+        '📝 <b>Description & Contact</b>  <i>(Step 5/5)</i>\nSend a short description. You can include phone/email or any extra details.',
       );
     }
   });
@@ -126,12 +126,7 @@ export function registerGuidedFlow(
     } catch {}
     const s = sessions.get(ctx.chat!.id);
     if (!s || s.mode !== 'guided' || s.step !== Step.RULES) return;
-    const key = ctx.match![1] as
-      | 'couples'
-      | 'bachelors'
-      | 'pets'
-      | 'parking'
-      | 'restrictions';
+    const key = ctx.match[1];
     if (key === 'couples') s.draft.couplesAllowed = !s.draft.couplesAllowed;
     if (key === 'bachelors')
       s.draft.bachelorsAllowed = !s.draft.bachelorsAllowed;
@@ -141,7 +136,7 @@ export function registerGuidedFlow(
     await redrawRulesCard(ctx, s);
   });
 
-  /* save */
+  /* save (now offers Add Photos like quick-flow) */
   bot.action(ACTIONS.G_SAVE as any, async (ctx) => {
     try {
       await ctx.answerCbQuery('Saving…');
@@ -160,10 +155,36 @@ export function registerGuidedFlow(
             .join(' ') || null,
         draft: finalDraft,
       });
-      sessions.set(ctx.chat!.id, { mode: 'idle' });
-      await ctx.reply(`✅ Saved! Listing ID: <code>${listingId}</code>`, {
-        parse_mode: 'HTML',
-      });
+
+      // After saving, offer Add Photos / Continue — exactly like quick-flow
+      const chooseKb = Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            'Add photos 📸',
+            ACTIONS.ADDPICS_PREFIX + listingId,
+          ),
+          Markup.button.callback(
+            'Continue without photos ✅',
+            ACTIONS.SKIP_PREFIX + listingId,
+          ),
+        ],
+      ]);
+
+      // Close the control card (if exists) and show the next choice
+      if (s.controlMsgId) {
+        try {
+          await runtime
+            .getBot()
+            .telegram.deleteMessage(ctx.chat!.id, s.controlMsgId);
+        } catch {}
+        s.controlMsgId = undefined;
+      }
+
+      sessions.set(ctx.chat!.id, { mode: 'idle' }); // quick-flow handlers will take over for photos
+      await ctx.replyWithHTML(
+        '✅ <b>Saved.</b>\nWould you like to add photos?',
+        chooseKb,
+      );
     } catch {
       await ctx.reply('❌ Failed to save your listing.');
     }
@@ -180,7 +201,7 @@ export function registerGuidedFlow(
     await replaceCard(
       ctx,
       s,
-      '🍀 <b>Create an Ad (Guided)</b>\nPick the <b>type</b> and <b>audience</b>.',
+      '🍀 <b>Create an Ad (Guided)</b>  <i>(Step 1/5)</i>\nPick the <b>type</b> and <b>audience</b>.',
       guidedTypeAudienceKeyboard(s.draft),
     );
   });
@@ -209,11 +230,21 @@ export function registerGuidedFlow(
       s.draft.description = text;
       s.step = Step.CONFIRM;
       const summary = renderSummary(s.draft);
+
+      // Build a custom confirm keyboard that includes Save (which will then ask for photos)
+      const confirmKb = Markup.inlineKeyboard([
+        [
+          Markup.button.callback('Save & choose photos 📸', ACTIONS.G_SAVE),
+          Markup.button.callback('Edit ✏️', ACTIONS.G_EDIT),
+          Markup.button.callback('Cancel ❌', ACTIONS.G_CANCEL),
+        ],
+      ]);
+
       return replaceCard(
         ctx,
         s,
         `📄 <b>Summary</b>\n<code>${summary}</code>`,
-        guidedConfirmKeyboard(),
+        confirmKb,
       );
     }
   });
@@ -233,7 +264,7 @@ export function registerGuidedFlow(
         s.bfStage !== 'rent'
       )
         return;
-      s.draft.price = Number(ctx.match![1]);
+      s.draft.price = Number(ctx.match[1]);
       await editOrReply(ctx, s, rentText(s.draft), guidedRentKeyboard(s.draft));
     },
   );
@@ -252,7 +283,7 @@ export function registerGuidedFlow(
         s.bfStage !== 'rent'
       )
         return;
-      const delta = Number(ctx.match![1]);
+      const delta = Number(ctx.match[1]);
       const base = s.draft.price || 0;
       s.draft.price = Math.max(0, base + delta);
       await editOrReply(ctx, s, rentText(s.draft), guidedRentKeyboard(s.draft));
@@ -289,7 +320,7 @@ export function registerGuidedFlow(
         s.bfStage !== 'deposit'
       )
         return;
-      const mode = ctx.match![1];
+      const mode = ctx.match[1];
       if (mode === 'none') s.draft.deposit = null;
       else if (mode === 'same' || mode === '1x')
         s.draft.deposit = s.draft.price ?? null;
@@ -320,7 +351,7 @@ export function registerGuidedFlow(
         s.bfStage !== 'deposit'
       )
         return;
-      const delta = Number(ctx.match![1]);
+      const delta = Number(ctx.match[1]);
       const base = s.draft.deposit ?? 0;
       s.draft.deposit = Math.max(0, base + delta);
       await editOrReply(
@@ -363,7 +394,7 @@ export function registerGuidedFlow(
         s.bfStage !== 'furn'
       )
         return;
-      s.draft.furnished = ctx.match![1] as any;
+      s.draft.furnished = ctx.match[1] as any;
       await editOrReply(
         ctx,
         s,
@@ -406,18 +437,18 @@ export function registerGuidedFlow(
     return '₹' + n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   }
   const rentText = (d: GuidedDraft) =>
-    `💰 <b>Budget (Rent)</b>\nSelected: <b>${fmtINR(d.price)}</b>`;
+    `💰 <b>Budget (Rent)</b>  <i>(Step 3/5)</i>\nSelected: <b>${fmtINR(d.price)}</b>`;
   const depositText = (d: GuidedDraft) =>
-    `💰 <b>Budget (Deposit)</b>\nSelected: <b>${fmtINR(d.deposit)}</b>`;
+    `💰 <b>Budget (Deposit)</b>  <i>(Step 3/5)</i>\nSelected: <b>${fmtINR(d.deposit)}</b>`;
   const furnText = (d: GuidedDraft) =>
-    `🛋️ <b>Furnishing</b>\nSelected: <b>${(d.furnished || FurnishedType.UNFURNISHED).toString()}</b>`;
+    `🛋️ <b>Furnishing</b>  <i>(Step 3/5)</i>\nSelected: <b>${(d.furnished || FurnishedType.UNFURNISHED).toString()}</b>`;
 
   async function redrawTypeAudCard(
     ctx: any,
     s: Extract<Session, { mode: 'guided' }>,
   ) {
     const html = [
-      '🍀 <b>Create an Ad (Guided)</b>',
+      '🍀 <b>Create an Ad (Guided)</b>  <i>(Step 1/5)</i>',
       `Type: <b>${s.draft.unitType ?? '-'}</b>`,
       `Audience: <b>${s.draft.audience ?? '-'}</b>`,
     ].join('\n');
@@ -430,7 +461,7 @@ export function registerGuidedFlow(
     await editOrReply(
       ctx,
       s,
-      '⚙️ <b>Rules</b>\nToggle what applies, then Next.',
+      '⚙️ <b>Rules</b>  <i>(Step 4/5)</i>\nToggle what applies, then tap <b>Next</b>.',
       guidedRulesKeyboard(s.draft),
     );
   }
@@ -448,7 +479,7 @@ export function registerGuidedFlow(
       } catch {}
     }
     const sent = await ctx.replyWithHTML(html, kb);
-    s.controlMsgId = (sent as any).message_id;
+    s.controlMsgId = sent.message_id;
     sessions.set(ctx.chat!.id, s);
   }
   async function editOrReply(
@@ -465,16 +496,13 @@ export function registerGuidedFlow(
           s.controlMsgId,
           undefined,
           html,
-          {
-            parse_mode: 'HTML',
-            reply_markup: (kb as any)?.reply_markup,
-          },
+          { parse_mode: 'HTML', reply_markup: kb?.reply_markup },
         );
         return;
       } catch {}
     }
     const sent = await ctx.replyWithHTML(html, kb);
-    s.controlMsgId = (sent as any).message_id;
+    s.controlMsgId = sent.message_id;
     sessions.set(ctx.chat!.id, s);
   }
 

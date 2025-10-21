@@ -65,7 +65,7 @@ export function guidedTypeAudienceKeyboard(draft: GuidedDraft) {
 export function guidedRulesKeyboard(d: GuidedDraft) {
   const btn = (label: string, key: string, on?: boolean) =>
     Markup.button.callback(
-      `${on ? '✅' : '⬜️'} ${label}`,
+      `${on ? '✅' : '❌'} ${label}`,
       ACTIONS.G_RULE_PREFIX + key,
     );
 

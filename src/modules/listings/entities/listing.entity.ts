@@ -39,10 +39,10 @@ export class Listing {
   owner?: User;
 
   @Column({ type: 'enum', enum: Audience, name: 'audience' })
-  audience!: Audience;
+  audience!: Audience | null;
 
   @Column({ type: 'enum', enum: UnitType, name: 'unit_type' })
-  unitType!: UnitType;
+  unitType!: UnitType | null;
 
   @Column({ type: 'varchar', length: 120, name: 'title', nullable: true })
   title!: string | null;

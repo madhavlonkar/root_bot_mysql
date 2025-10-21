@@ -13,6 +13,7 @@ import {
 } from 'src/common/enums/flats.enum';
 import { ListingStatus } from 'src/common/enums/listing-status.enum';
 import { User } from 'src/modules/users/entities/user.entity';
+import { GuidedDraft } from '../telegram-menu/types';
 
 export type IntakeMediaInput = {
   kind: 'photo' | 'document';
@@ -306,5 +307,90 @@ export class ListingIntakeService {
     const m = cleaned.match(/(?:₹|Rs\.?\s*)?(\d{2,9})/i);
     const n = m ? Number(m[1]) : 0;
     return Number.isFinite(n) ? n : 0;
+  }
+
+  async createDraftListingFromGuided(opts: {
+    chatId: number;
+    fromUserId: number;
+    fromUsername?: string | null;
+    fromDisplayName?: string | null;
+    draft: GuidedDraft;
+  }): Promise<string> {
+    const { chatId, fromUserId, fromUsername, fromDisplayName, draft } = opts;
+
+    // ensure/resolve owner user
+    const owner = await this.findOrCreateUserByTelegram(
+      fromUserId,
+      fromUsername ?? null,
+      fromDisplayName ?? null,
+    );
+
+    // title fallback
+    const title =
+      (draft.title && draft.title.trim()) ||
+      [
+        draft.unitType?.toUpperCase?.() ?? '',
+        draft.areaText ? `in ${draft.areaText}` : '',
+        draft.audience ? `for ${draft.audience}` : '',
+        draft.price ? `– ₹${draft.price}` : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .slice(0, 120) ||
+      'Untitled';
+
+    const listing: Listing = {
+      id: uuid(),
+      ownerUserId: owner.id,
+      owner: undefined,
+
+      audience: draft.audience ?? null,
+      unitType: draft.unitType ?? null,
+
+      title,
+      description: draft.description ?? null,
+
+      cityId: draft.cityId ?? null,
+      city: undefined,
+      areaId: draft.areaId ?? null,
+      area: undefined,
+      areaText: draft.areaText ?? null,
+      addressLine: draft.addressLine ?? null,
+
+      price: draft.price || 0,
+      deposit: draft.deposit ?? null,
+
+      furnished: draft.furnished ?? FurnishedType.UNFURNISHED,
+
+      restrictions: draft.restrictions ?? true,
+      couplesAllowed: draft.couplesAllowed ?? false,
+      bachelorsAllowed: draft.bachelorsAllowed ?? true,
+      petsAllowed: draft.petsAllowed ?? true,
+      parkingAvailable: draft.parkingAvailable ?? true,
+
+      contactDetails: draft.contactDetails ?? null,
+
+      amenities: draft.amenities ?? null,
+      nearbyPlaces: draft.nearbyPlaces ?? null,
+      tags: [
+        ...(draft.tags ?? []),
+        `tg:chat=${chatId}`,
+        `tg:from=${fromUserId}`,
+        ...(fromUsername ? [`tg:username=@${fromUsername}`] : []),
+      ],
+      notes: null,
+
+      status: ListingStatus.DRAFT,
+      publishedAt: null,
+      postedAt: null,
+
+      createdAt: undefined as any,
+      updatedAt: undefined as any,
+
+      viewsCount: 0,
+    };
+
+    await this.listingRepo.save(listing);
+    return listing.id;
   }
 }

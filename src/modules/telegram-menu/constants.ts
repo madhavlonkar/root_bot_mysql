@@ -38,4 +38,12 @@ export const ACTIONS = {
 
   G_FURN_SET_PREFIX: 'g:furn:set:', // unfurnished | semi | furnished
   G_BACK: 'g:back',
+
+  BROWSE_MAIN: 'browse:main',
+  BROWSE_AREA: 'browse:area',
+  BROWSE_LATEST: 'browse:latest',
+  BROWSE_BUDGET: 'browse:budget',
+  BROWSE_BUDGET_PREFIX: 'browse:budget:', // e.g. browse:budget:10-20
+  BROWSE_TYPE: 'browse:type',
+  BROWSE_TYPE_PREFIX: 'browse:type:',
 } as const;

@@ -5,6 +5,7 @@ import { Session } from './types';
 import { registerPostQuickFlow } from './flows/post-quick.flow';
 import { registerNavHandlers } from './flows/nav.handler';
 import { registerGuidedFlow } from './flows/guided.flow';
+import { registerBrowseFlow } from './flows/browse.flow';
 
 @Injectable()
 export class TelegramMenuService implements OnModuleInit {
@@ -23,6 +24,7 @@ export class TelegramMenuService implements OnModuleInit {
     registerNavHandlers(bot, this.sessions, this.intake);
     registerPostQuickFlow(bot, this.runtime, this.sessions, this.intake);
     registerGuidedFlow(bot, this.runtime, this.sessions, this.intake);
+    registerBrowseFlow(bot, this.runtime, this.sessions, this.intake);
 
     await this.runtime.ensureLaunched();
     this.logger.log('TelegramMenuService handlers registered.');

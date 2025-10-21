@@ -4,6 +4,7 @@ import { Session } from '../types';
 import { ListingIntakeService } from 'src/modules/listing-intake/listing-intake.service';
 import { MediaKind } from 'src/common/enums/flats.enum';
 import { postChooserKeyboard } from '../keyboard'; // ⬅️ add this
+import { showBrowseMenu } from './browse.flow';
 
 export function registerNavHandlers(
   bot: Telegraf,
@@ -63,7 +64,7 @@ export function showPostHelp(ctx: any) {
 }
 
 export async function showBrowse(ctx: any) {
-  await ctx.replyWithHTML(`🏠 <b>Browse</b>\nComing soon ✨`);
+  return showBrowseMenu(ctx);
 }
 export async function showBoosted(ctx: any) {
   await ctx.replyWithHTML(`🔝 <b>Boosted</b>\nNo boosted listings yet.`);

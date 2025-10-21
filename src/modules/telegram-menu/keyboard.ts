@@ -1,7 +1,7 @@
 import { Markup } from 'telegraf';
 import { ACTIONS } from './constants';
 import { GuidedDraft } from './types';
-import { FurnishedType } from 'src/common/enums/flats.enum';
+import { FurnishedType, UnitType } from 'src/common/enums/flats.enum';
 
 export function postChooserKeyboard() {
   return Markup.inlineKeyboard([
@@ -167,5 +167,54 @@ export function guidedFurnishingKeyboard(d: GuidedDraft) {
       Markup.button.callback('Next ▶️', ACTIONS.G_NEXT),
       Markup.button.callback('Cancel ❌', ACTIONS.G_CANCEL),
     ],
+  ]);
+}
+
+export function browseMainKeyboard() {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('🔎 Search by Area', ACTIONS.BROWSE_AREA),
+      Markup.button.callback('🆕 Latest Listings', ACTIONS.BROWSE_LATEST),
+    ],
+    [
+      Markup.button.callback('💰 Browse by Budget', ACTIONS.BROWSE_BUDGET),
+      Markup.button.callback('🏡 Browse by Property Type', ACTIONS.BROWSE_TYPE),
+    ],
+  ]);
+}
+
+export function browseBudgetKeyboard() {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('< ₹10K', ACTIONS.BROWSE_BUDGET_PREFIX + '<10'),
+      Markup.button.callback(
+        '₹10K–₹20K',
+        ACTIONS.BROWSE_BUDGET_PREFIX + '10-20',
+      ),
+    ],
+    [
+      Markup.button.callback(
+        '₹20K–₹40K',
+        ACTIONS.BROWSE_BUDGET_PREFIX + '20-40',
+      ),
+      Markup.button.callback('> ₹40K', ACTIONS.BROWSE_BUDGET_PREFIX + '>40'),
+    ],
+    [Markup.button.callback('◀️ Back', ACTIONS.BROWSE_MAIN)],
+  ]);
+}
+
+export function browseTypeKeyboard() {
+  const btn = (label: string, value: UnitType) =>
+    Markup.button.callback(label, ACTIONS.BROWSE_TYPE_PREFIX + value);
+
+  return Markup.inlineKeyboard([
+    [btn('1RK', UnitType.RK1), btn('1BHK', UnitType.BHK1)],
+    [btn('2BHK', UnitType.BHK2), btn('3BHK', UnitType.BHK3)],
+    [
+      btn('Single Room', UnitType.SINGLE_ROOM),
+      btn('Flatmates / Shared', UnitType.FLATMATES),
+    ],
+    [btn('PG / Coliving', UnitType.PG), btn('Hostel', UnitType.HOSTEL)],
+    [Markup.button.callback('◀️ Back', ACTIONS.BROWSE_MAIN)],
   ]);
 }
